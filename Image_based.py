@@ -102,16 +102,16 @@ def generate_change_map(original_path, encoded_path, output_path):
 
 
 if __name__ == "__main__":
-    base_path = 'Steganography/Image Based/base.png'
-    secret_path = 'Steganography/Image Based/message.png'
-    output_path = 'Steganography/Results/output_image2.png'
-    output_folder = 'Steganography/Results/'
+    base_path = 'Image Based/base.png'
+    secret_path = 'Image Based/message.png'
+    output_path = 'Results/output_image2.png'
+    output_folder = 'Results/'
 
     print("Encoding...")
     encode(base_path, secret_path, output_path)
 
     print("Generating change map...")
-    generate_change_map(base_path, output_path, 'Steganography/Results/change_map.png')
+    generate_change_map(base_path, output_path, 'Results/change_map.png')
     
     print("Decoding...")
     decode(output_path, output_folder)

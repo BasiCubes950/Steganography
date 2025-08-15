@@ -49,14 +49,10 @@ def create_bitwise_change_maps(original_img, encoded_img, output_prefix):
         change_pixels = change_map.load()
         for x in range(width):
             for y in range(height):
-                changed = False
-                for c in range(3):  # R, G, B
-                    orig_bit = (orig_pixels[x, y][c] >> bit) & 1
-                    enc_bit = (enc_pixels[x, y][c] >> bit) & 1
-                    if orig_bit != enc_bit:
-                        changed = True
-                        break
-                if changed:
+                # Only check the red channel (index 0)
+                orig_bit = (orig_pixels[x, y][0] >> bit) & 1
+                enc_bit = (enc_pixels[x, y][0] >> bit) & 1
+                if orig_bit != enc_bit:
                     change_pixels[x, y] = (255, 255, 255)
                 else:
                     change_pixels[x, y] = (0, 0, 0)

@@ -94,7 +94,7 @@ def main():
     output_path = "results/lsb_output.mp4"
     os.makedirs("output_videos", exist_ok=True)
 
-    secret_message = "Hidden data using Spatial LSB steganography!"
+    secret_message = "Hidden message!"
     print("Embedding message...")
     embed_message_in_video(input_path, output_path, secret_message)
 

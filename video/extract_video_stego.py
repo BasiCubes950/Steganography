@@ -14,6 +14,11 @@ def extract_hidden_image_from_frame(frame):
     """
     BUG might be here
     """
+    """
+    r_hidden = ((rgb[:, :, 0] % 16) * 16)
+    g_hidden = ((rgb[:, :, 1] % 16) * 16)
+    b_hidden = ((rgb[:, :, 2] % 16) * 16)
+    """
     r_hidden = (rgb[:, :, 0] & 0x0F) << 4
     g_hidden = (rgb[:, :, 1] & 0x0F) << 4
     b_hidden = (rgb[:, :, 2] & 0x0F) << 4
@@ -119,4 +124,4 @@ input = "video/Output/output.mp4"
 frame_indices = [10, 25, 50, 75, 100]
 output = os.path.join(os.path.dirname(__file__), "Output")
 
-extract_images_from_video(input, frame_indices, output, False)
+extract_images_from_video(input, frame_indices, output, False, stego_keys=["key1", "key2", "key3", "key4", "key5"])

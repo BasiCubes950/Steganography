@@ -32,6 +32,12 @@ def encode_image_in_frame(frame, secret_img_path, stego_key):
         sx, sy = src
         br, bg, bb = base_pixels[dx, dy]
         sr, sg, sb = secret_pixels[sx, sy]
+        """
+        br = ((br // 16)*16) + (sr >> 4)
+        bg = ((bg // 16)*16) + (sg >> 4)
+        bb = ((bb // 16)*16) + (sb >> 4)
+        """
+
         br = (br & 0b11110000) | (sr >> 4)
         bg = (bg & 0b11110000) | (sg >> 4)
         bb = (bb & 0b11110000) | (sb >> 4)
@@ -83,7 +89,6 @@ def hide_images_in_video(input_video_path, image_paths, frame_indices, output_vi
     cap.release()
     out.release()
     print(f"[+] Output video saved to {output_video_path}")
-
 
 input_video = "video/input.mp4"
 image_paths = [f"video/Images/image{i+1}.png" for i in range(5)]

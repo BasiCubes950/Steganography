@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import time
 import os
+from utils import convert
 
 def embed_message_in_motion_vectors(video_path, output_path, message):
     cap = cv2.VideoCapture(video_path)
@@ -83,7 +84,7 @@ def embed_message_in_motion_vectors(video_path, output_path, message):
     print(f"✅ Finished embedding ({bit_index}/{total_bits} bits). Saved to {output_path}")
 
 
-def extract_message_from_motion_vectors(stego_path, original_path, message_length):
+def extract_message_from_motion_vectors(stego_path, original_path, message_length, output_image_path=None, shape=None):
     cap_s = cv2.VideoCapture(stego_path)
     cap_o = cv2.VideoCapture(original_path)
     bits = []
@@ -132,22 +133,53 @@ def extract_message_from_motion_vectors(stego_path, original_path, message_lengt
 
         # Rebuild message
     bits = np.array(bits[:message_length * 8], dtype=np.uint8)
+
+    # If caller provided an output path and shape, rebuild and save image
+    if output_image_path is not None and shape is not None:
+        try:
+            convert.bits_to_image(bits, shape, output_image_path)
+            return None
+        except Exception as e:
+            print(f"[ERROR] Could not reconstruct image: {e}")
+
     bytes_arr = np.packbits(bits)
     return bytes_arr.tobytes().decode('utf-8', errors='ignore')
 
 def main():
     input_path = "data/data1.mp4"
     output_path = "Results/motion_vector_output.avi"
-    secret_message = "Hidden message!"
-    message_length = len(secret_message)
+    
+    # Test with an image if available, otherwise use text
+    try:
+        secret_image = "data/secret.png"  # replace with your image path
+        bits, shape = convert.image_to_bits(secret_image)
+        message_length = len(bits) // 8
+        message = bits.tobytes()
+        is_image = True
+    except (FileNotFoundError, Exception) as e:
+        print(f"No image found ({str(e)}), using text message instead")
+        secret_message = "Hidden message!"
+        message = secret_message.encode('utf-8')
+        message_length = len(secret_message)
+        shape = None
+        is_image = False
 
     print("Embedding message...")
     start = time.time()
-    embed_message_in_motion_vectors(input_path, output_path, secret_message)
+    embed_message_in_motion_vectors(input_path, output_path, message)
     print(f"Embedding done in {time.time() - start:.2f} sec")
 
-    recovered = extract_message_from_motion_vectors(output_path, input_path, message_length)
-    print(f"Recovered message: {recovered}")
+    # Set up extraction path for images
+    if is_image:
+        extract_path = os.path.join("results", "images", "motion_vector_secret.png")
+        recovered = extract_message_from_motion_vectors(output_path, input_path, message_length,
+                                                      output_image_path=extract_path,
+                                                      shape=shape)
+        if recovered is None:
+            print(f"✅ Extracted image saved to: {extract_path}")
+    else:
+        recovered = extract_message_from_motion_vectors(output_path, input_path, message_length)
+        print(f"Recovered message: {recovered}")
 
 
 main()

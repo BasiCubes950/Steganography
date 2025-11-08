@@ -62,7 +62,8 @@ def main(input_folder):
 
         for name, (embed_func, extract_func) in methods.items():
             print(f"Applying method: {name}")
-            results_dir = os.path.join("Results", "Videos")
+            results_dir = os.path.join("results", "Videos")
+            os.makedirs(results_dir, exist_ok=True)
             embedded = os.path.join(results_dir, f"{os.path.splitext(file)[0]}_{name}_embedded.mp4")
             recompressed = os.path.join(results_dir, f"{os.path.splitext(file)[0]}_{name}_recompressed.mp4")
 

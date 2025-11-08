@@ -48,7 +48,7 @@ def embed_message_temporally(video_path, output_path, message, intensity_shift=3
     out.release()
     print(f"✅ Temporal embedding complete ({bit_index}/{total_bits} bits used). Saved to {output_path}")
 
-def extract_message_temporally(stego_path, original_path, message_length, intensity_shift=3):
+def extract_message_temporally(stego_path, original_path, message_length, intensity_shift=3, output_image_path=None, shape=None):
     cap_s = cv2.VideoCapture(stego_path)
     cap_o = cv2.VideoCapture(original_path)
 
@@ -82,6 +82,15 @@ def extract_message_temporally(stego_path, original_path, message_length, intens
     cap_o.release()
 
     bits = np.array(bits[:message_length * 8], dtype=np.uint8)
+
+    # If caller requested image reconstruction, save the image and return None
+    if output_image_path is not None and shape is not None:
+        try:
+            bits_to_image(bits, shape, output_image_path)
+            return None
+        except Exception as e:
+            print(f"[ERROR] Could not reconstruct image: {e}")
+
     bytes_arr = np.packbits(bits)
     message = bytes_arr.tobytes().decode('utf-8', errors='ignore')
     return message

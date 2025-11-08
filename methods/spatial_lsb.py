@@ -1,105 +1,131 @@
 import cv2
 import numpy as np
 import os
+from tqdm import tqdm
 
-def embed_message_in_frame(frame, message_bits, bit_index=0):
-    """Embed binary message bits into the frame’s LSBs (per pixel)."""
-    h, w, c = frame.shape
-    total_pixels = h * w * c
-    frame_flat = frame.flatten().astype(np.uint8)
 
-    for i in range(len(message_bits)):
-        if bit_index + i >= total_pixels:
-            break
-        pixel_val = frame_flat[bit_index + i]
-        # Mask out LSB and insert bit (ensure uint8 type)
-        frame_flat[bit_index + i] = np.uint8((int(pixel_val) & 0xFE) | int(message_bits[i]))
+def image_to_bits(image_path):
+    """Convert an image to a bit array."""
+    from .utils.convert import image_to_bits as convert_image_to_bits
+    return convert_image_to_bits(image_path)
 
-    frame_stego = frame_flat.reshape((h, w, c))
-    return frame_stego, bit_index + len(message_bits)
 
-def extract_message_from_frame(frame, message_length, bit_index=0):
-    """Extract hidden message bits from the frame’s LSBs."""
-    h, w, c = frame.shape
-    frame_flat = frame.flatten()
+def bits_to_image(bits, shape, output_path=None):
+    """Convert bit array back to an image and save."""
+    from .utils.convert import bits_to_image as convert_bits_to_image
+    return convert_bits_to_image(bits, shape, output_path)
 
-    bits = []
-    for i in range(message_length):
-        if bit_index + i >= len(frame_flat):
-            break
-        bits.append(frame_flat[bit_index + i] & 1)
-    return bits, bit_index + message_length
 
-def embed_message_in_video(input_video, output_video, message):
-    """Hide a binary string message in all frames of a video."""
-    cap = cv2.VideoCapture(input_video)
+def embed_image_in_video(video_path, secret_image_path, output_path):
+    """Embed a secret image bitstream into a video using LSB."""
+    # Load secret image as bitstream
+    message_bits, img_shape = image_to_bits(secret_image_path)
+    total_bits = len(message_bits)
+    bit_index = 0
+
+    cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        raise ValueError(f"Cannot open video file {input_video}")
-
-    # Convert message to binary
-    message_bytes = message.encode('utf-8')
-    message_bits = np.unpackbits(np.frombuffer(message_bytes, dtype=np.uint8))
+        raise FileNotFoundError(f"Cannot open video: {video_path}")
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_video, fourcc, fps, (width, height))
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    bit_index = 0
-    total_bits = len(message_bits)
+    # Setup output video
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+
+    total_capacity = frame_count * w * h * 3
+    if total_bits > total_capacity:
+        raise ValueError(f"Image too large for this video. Capacity: {total_capacity} bits, Required: {total_bits}")
+
+    print(f"Embedding {total_bits} bits into {frame_count} frames...")
+    progress = tqdm(total=frame_count)
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        if bit_index < total_bits:
-            frame, bit_index = embed_message_in_frame(frame, message_bits, bit_index)
+        flat = frame.flatten()
+        for i in range(len(flat)):
+            if bit_index >= total_bits:
+                break
+            flat[i] = (flat[i] & ~1) | message_bits[bit_index]
+            bit_index += 1
+
+        frame = flat.reshape(frame.shape)
         out.write(frame)
+        progress.update(1)
+
+        if bit_index >= total_bits:
+            break
 
     cap.release()
     out.release()
+    progress.close()
 
-def extract_message_from_video(stego_video, message_length_bytes):
-    """Extract a hidden message from a stego video."""
-    cap = cv2.VideoCapture(stego_video)
+    print(f"✅ Embedded {bit_index}/{total_bits} bits into {os.path.basename(output_path)}")
+    return img_shape, total_bits
+
+
+def extract_image_from_video(stego_video_path, output_path, bit_count, shape):
+    """Extract embedded bits from stego video and reconstruct image."""
+    cap = cv2.VideoCapture(stego_video_path)
     if not cap.isOpened():
-        raise ValueError(f"Cannot open video file {stego_video}")
+        raise FileNotFoundError(f"Cannot open stego video: {stego_video_path}")
 
-    total_bits = message_length_bytes * 8
-    extracted_bits = []
-    bit_index = 0
+    bits = []
+    print("Extracting bits from video...")
+    progress = tqdm(total=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
 
-    while True:
+    while len(bits) < bit_count:
         ret, frame = cap.read()
         if not ret:
             break
 
-        if bit_index < total_bits:
-            bits, bit_index = extract_message_from_frame(frame, total_bits - bit_index)
-            extracted_bits.extend(bits)
-        else:
-            break
+        flat = frame.flatten()
+        remaining = bit_count - len(bits)
+        extracted = flat[:remaining] & 1
+        bits.extend(extracted)
+        progress.update(1)
 
     cap.release()
+    progress.close()
 
-    # Convert bits back to bytes
-    message_bytes = np.packbits(np.array(extracted_bits[:total_bits], dtype=np.uint8))
-    return message_bytes.tobytes().decode('utf-8', errors='ignore')
+    bits = np.array(bits[:bit_count], dtype=np.uint8)
+    bits_to_image(bits, shape, output_path)
+
 
 def main():
-    # Example run
-    input_path = "data/data1.mp4"
-    output_path = "results/lsb_output.mp4"
-    os.makedirs("output_videos", exist_ok=True)
+    video_path = "data/data1.mp4"  # Input video
+    secret_image_path = "data/secret.png"  # Your secret image
+    
+    # Ensure output directories exist
+    os.makedirs("results/Videos", exist_ok=True)
+    os.makedirs("results/images", exist_ok=True)
+    
+    output_video_path = "results/Videos/lsb_stego_output.avi"
+    recovered_image_path = "results/images/lsb_extracted_secret.png"
 
-    secret_message = "Hidden message!"
-    print("Embedding message...")
-    embed_message_in_video(input_path, output_path, secret_message)
+    try:
+        # Step 1: Embed image into video
+        print(f"\nEmbedding image {secret_image_path} into video...")
+        img_shape, bit_count = embed_image_in_video(video_path, secret_image_path, output_video_path)
 
-    print("Extracting message...")
-    recovered = extract_message_from_video(output_path, len(secret_message))
-    print("Recovered:", recovered)
+        # Step 2: Extract the image back
+        print(f"\nExtracting hidden image from {output_video_path}...")
+        extract_image_from_video(output_video_path, recovered_image_path, bit_count, img_shape)
+        
+        print(f"\n✅ Process complete!")
+        print(f"- Stego video saved to: {output_video_path}")
+        print(f"- Extracted image saved to: {recovered_image_path}")
+    except FileNotFoundError as e:
+        print(f"\n❌ Error: {str(e)}")
+        print("Please ensure input files exist in the correct locations:")
 
-main()
+
+if __name__ == "__main__":
+    main()

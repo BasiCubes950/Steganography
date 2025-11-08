@@ -8,3 +8,4 @@ pybrisque
 scipy
 tqdm
 seaborn
+libsvm

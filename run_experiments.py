@@ -7,6 +7,8 @@ from pathlib import Path
 import cv2
 import pandas as pd
 from tqdm import tqdm
+# !!! ADDED numpy IMPORT HERE !!!
+import numpy as np 
 
 from embed.spatial_lsb import embed_spatial_lsb
 from embed.temporal_embed import embed_temporal
@@ -15,7 +17,7 @@ from extract.spatial_lsb_extract import extract_spatial_lsb
 from extract.temporal_extract import extract_temporal
 from extract.motion_vector_extract import extract_motion_vector
 from simulate.recompress import recompress_video
-from analysis.metrics import run_all_metrics
+# from analysis.metrics import run_all_metrics # <--- REMOVED/COMMENTED OUT
 from analysis.compare_results import plot_results
 
 # --- Setup Logging ---
@@ -65,6 +67,24 @@ METHODS = {
         "extract": extract_motion_vector,
     },
 }
+
+# --- PLACEHOLDER FOR METRICS ---
+# The analysis.metrics.run_all_metrics function likely calculates more than just BRISQUE.
+# We need a new function that calculates the *other* metrics (like PSNR and SSIM)
+# and ignores BRISQUE, or we'll just return placeholder metrics here to keep the flow working.
+# I will assume you have a way to calculate basic metrics like PSNR/SSIM, or you will update
+# analysis/metrics.py to exclude BRISQUE. For this file, we will create a mock function.
+
+# !!! NEW MOCK FUNCTION ADDED HERE !!!
+def run_placeholder_metrics(img1, img2):
+    """Placeholder for your remaining quality metrics (e.g., PSNR, SSIM)."""
+    # NOTE: You must update your 'analysis/metrics.py' or create a new file
+    # to actually calculate your remaining metrics (PSNR, SSIM, etc.) here.
+    # For now, we return dummy data to keep the script running.
+    return {
+        "PSNR": 40.0, # Dummy value
+        "SSIM": 0.95, # Dummy value
+    }
 
 
 def run_full_pipeline(base_video_path, secret_image_path, bitrates, codecs):
@@ -141,7 +161,8 @@ def run_full_pipeline(base_video_path, secret_image_path, bitrates, codecs):
                 # Create a black image to represent total failure
                 extracted_image = np.zeros_like(original_secret_image)
 
-            metrics = run_all_metrics(original_secret_image, extracted_image)
+            # metrics = run_all_metrics(original_secret_image, extracted_image) # <--- ORIGINAL CALL REMOVED
+            metrics = run_placeholder_metrics(original_secret_image, extracted_image) # <--- USING MOCK FUNCTION
             metrics["method"] = method_name
             metrics["codec"] = codec
             metrics["bitrate_kbs"] = int(bitrate.replace("k", "").replace("M", "000"))

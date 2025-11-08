@@ -1,0 +1,67 @@
+import ffmpeg
+import os
+
+def recompress_youtube(input_path, output_dir):
+    """
+    Simulates YouTube's recompression process by encoding the input video
+    at multiple resolutions, bitrates, and codecs that reflect YouTube's
+    transcoding ladder.
+
+    Parameters:
+        input_path (str): Path to the input (stego) video.
+        output_dir (str): Directory to save recompressed versions.
+
+    Returns:
+        dict: Mapping of profile label -> recompressed video path.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    # YouTube-like encoding ladder (approximate real bitrates)
+    youtube_profiles = [
+        {"label": "1080p_h264", "codec": "libx264", "bitrate": "5000k", "scale": "1920:1080"},
+        {"label": "720p_h264",  "codec": "libx264", "bitrate": "2500k", "scale": "1280:720"},
+        {"label": "480p_h264",  "codec": "libx264", "bitrate": "1000k", "scale": "854:480"},
+        {"label": "360p_vp9",   "codec": "libvpx-vp9", "bitrate": "800k", "scale": "640:360"},
+        {"label": "240p_vp9",   "codec": "libvpx-vp9", "bitrate": "400k", "scale": "426:240"},
+    ]
+
+    outputs = {}
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+
+    for prof in youtube_profiles:
+        out_path = os.path.join(
+            output_dir,
+            f"{base_name}_youtube_{prof['label']}.mp4"
+        )
+
+        (
+            ffmpeg
+            .input(input_path)
+            .output(
+                out_path,
+                vcodec=prof["codec"],
+                video_bitrate=prof["bitrate"],
+                vf=f"scale={prof['scale']}",
+                preset="medium",
+                crf=23,  # Similar to YouTube’s variable quality target
+                movflags="+faststart"
+            )
+            .overwrite_output()
+            .run(quiet=True)
+        )
+
+        outputs[prof["label"]] = out_path
+        print(f"[YouTube] Recompressed: {prof['label']} → {out_path}")
+
+    return outputs
+
+
+# Example usage
+if __name__ == "__main__":
+    input_video = "output/stego/stego_motion_vector.mp4"
+    output_folder = "output/recompressed/youtube/"
+    results = recompress_youtube(input_video, output_folder)
+
+    print("\nGenerated recompressed YouTube-style videos:")
+    for label, path in results.items():
+        print(f"  {label}: {path}")

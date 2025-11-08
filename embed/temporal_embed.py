@@ -31,7 +31,11 @@ def embed_temporal(base_video_path: str, secret_image_path: str, output_video_pa
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    if fps is None or fps <= 0:
+        raise ValueError(f"Invalid FPS value read from video: {fps}")
     writer = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
+    if not writer.isOpened():
+        raise IOError(f"Could not open VideoWriter for output: {output_video_path} (check codec/permissions)")
 
     # 3. Perform embedding
     bit_idx = 0

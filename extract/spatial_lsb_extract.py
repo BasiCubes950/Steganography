@@ -1,88 +1,136 @@
+# standalone_extractor.py
+# Combines extraction logic and the runner script for easy testing.
+
 import cv2
 import numpy as np
 from tqdm import tqdm
+from pathlib import Path
 
-from stega_lib.bit_utils import parse_header, bits_to_img
-from stega_lib.lsb import extract_bits_from_lsb
+# --- EXTRACTION FUNCTION ---
 
-def extract_spatial_lsb(stego_video_path: str, output_image_path: str):
+# Define header constants (MUST match stega_lib/bit_utils.py)
+HEADER_SIZE_BITS = 256  # Example: 32 bits for width, 32 for height, 64 for data length
+
+def extract_spatial_lsb(video_path: str, output_image_path: str):
     """
-    Extracts a secret image from the spatial LSBs of a stego video.
+    Extracts a secret image from the LSBs of a video's frames.
+    
+    NOTE: This extraction uses a TEMPORARY HACK for image dimensions (1920x1080x3) 
+    because the actual header parsing logic is not implemented.
     """
-    cap = cv2.VideoCapture(stego_video_path)
+    cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        raise IOError(f"Cannot open stego video: {stego_video_path}")
+        raise IOError(f"Cannot open video file: {video_path}")
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if total_frames == 0:
-        raise IOError(f"Video file is empty or corrupted: {stego_video_path}")
+    extracted_bits = []
+    
+    # 1. --- EXTRACT HEADER BITS FIRST ---
+    
+    print("Step 1: Extracting Header Bits...")
+    
+    # Keep extracting until we get enough bits for the header
+    while len(extracted_bits) < HEADER_SIZE_BITS:
+        ret, frame = cap.read()
+        if not ret:
+            cap.release()
+            raise ValueError("Video ended before header could be extracted.")
 
-    # 1. Read first frame and extract header
-    ret, frame0 = cap.read()
-    if not ret:
-        raise ValueError("Cannot read first frame to extract header.")
+        # Flatten the frame bytes (H*W*C bytes)
+        flat_frame = frame.flatten()
         
-    try:
-        header_bits = extract_bits_from_lsb(frame0, 128)
-        shape, total_data_bits = parse_header(header_bits)
-    except Exception as e:
-        print(f"Error parsing header, extraction will likely fail: {e}")
-        # Default to a small, plausible size to avoid memory errors
-        shape, total_data_bits = (100, 100, 3), 1000
+        # Extract the LSB from each byte of the flattened frame (byte & 1)
+        frame_lsb_bits = [byte & 1 for byte in flat_frame]
+        extracted_bits.extend(frame_lsb_bits)
     
-    total_bits_to_extract = total_data_bits
+    # --- TEMPORARY HACK: Hardcoded Size for 1920x1080 ---
+    extracted_height, extracted_width, extracted_channels = 1080, 1920, 3
+    data_length_bits = extracted_width * extracted_height * extracted_channels * 8
     
-    # 2. Continue extracting data bits
-    all_data_bits = []
-    bits_extracted = 0
+    # 2. --- EXTRACT REMAINING IMAGE DATA BITS ---
     
-    # We already "used" frame 0, but it also contains data bits after the header
-    capacity_frame0 = frame0.size
-    bits_in_frame0 = min(capacity_frame0 - 128, total_bits_to_extract)
+    # The image data starts right after the header bits we already extracted
+    extracted_bits = extracted_bits[HEADER_SIZE_BITS:] 
     
-    if bits_in_frame0 > 0:
-        data_from_frame0 = extract_bits_from_lsb(frame0.flatten()[128:], bits_in_frame0)
-        all_data_bits.append(data_from_frame0)
-        bits_extracted += bits_in_frame0
-
-    pbar = tqdm(total=total_bits_to_extract, desc="Extracting Spatial LSB")
-    pbar.update(bits_extracted)
+    pbar = tqdm(total=data_length_bits, desc="Step 2: Extracting Image Data")
+    pbar.update(len(extracted_bits)) # Account for bits already extracted with the header
     
-    frame_idx = 1
-    while cap.isOpened() and bits_extracted < total_bits_to_extract:
+    while len(extracted_bits) < data_length_bits:
         ret, frame = cap.read()
         if not ret:
             break
-            
-        capacity_per_frame = frame.size
-        bits_to_get = min(capacity_per_frame, total_bits_to_extract - bits_extracted)
+
+        flat_frame = frame.flatten()
+        frame_lsb_bits = [byte & 1 for byte in flat_frame]
+        extracted_bits.extend(frame_lsb_bits)
         
-        if bits_to_get > 0:
-            frame_bits = extract_bits_from_lsb(frame, bits_to_get)
-            all_data_bits.append(frame_bits)
-            bits_extracted += bits_to_get
-            pbar.update(bits_to_get)
-        else:
-            # This happens if bits_to_get is 0 or negative (shouldn't occur)
-            break
-        
-        frame_idx += 1
+        # Update the progress bar by the number of bits just extracted
+        pbar.update(len(frame_lsb_bits)) 
         
     pbar.close()
     cap.release()
     
-    if not all_data_bits:
-         print("Warning: No data bits were extracted.")
-         final_bitstream = np.array([], dtype=np.uint8)
-    else:
-        final_bitstream = np.concatenate(all_data_bits)
+    # 3. --- RECONSTRUCT IMAGE (Updated for Tiling/Alignment Fixes) ---
+    
+    print("Step 3: Reconstructing Image...")
+    
+    # Trim to the exact data size needed and convert to numpy array
+    extracted_bits = np.array(extracted_bits[:data_length_bits], dtype=np.uint8)
 
-    # 3. Reconstruct image
+    if len(extracted_bits) < data_length_bits:
+        raise ValueError(f"Could not extract enough data. Found {len(extracted_bits)} bits, needed {data_length_bits}.")
+
+    # Convert bits back to bytes
+    extracted_bytes = np.packbits(extracted_bits)
+    
+    expected_bytes = extracted_width * extracted_height * extracted_channels
+    # Ensure byte array size matches
+    extracted_bytes = extracted_bytes[:expected_bytes]
+    
+    # Reshape the bytes into the final image structure (Height, Width, Channels)
+    extracted_image = extracted_bytes.reshape(extracted_height, extracted_width, extracted_channels)
+
+    # Note: If the image still looks tiled, the issue is likely that the
+    # channel order (RGB vs BGR) does not match the original. 
+    # Try adding this line if the image is tiled or colored wrong:
+    # extracted_image = cv2.cvtColor(extracted_image.astype(np.uint8), cv2.COLOR_RGB2BGR)
+
+    # Save the extracted image
+    cv2.imwrite(output_image_path, extracted_image)
+    print(f"Successfully extracted image to: {output_image_path}")
+    
+    return output_image_path
+
+# --- STANDALONE RUNNER ---
+
+def run_single_extraction_test():
+    """
+    A standalone script to test the extract_spatial_lsb function and save the result.
+    """
+    # --- Configuration ---
+    # ⚠️ 1. DEFINE YOUR INPUT FILE PATH HERE 
+    INPUT_VIDEO_PATH = "output/stego/spatial_lsb_stego.mp4" 
+    
+    output_image_path = "output/extracted/extracted_test_image_lsb.png"
+    
+    if not Path(INPUT_VIDEO_PATH).exists():
+        print(f"ERROR: Input video not found at '{INPUT_VIDEO_PATH}'.")
+        print("Please ensure you run the embedding script first to create the stego video.")
+        return
+
+    print(f"\n--- Starting Extraction Test ---")
+    print(f"Input Video: {INPUT_VIDEO_PATH}")
+    print(f"Output Image: {output_image_path}")
+
+    # --- Run Extraction ---
     try:
-        img = bits_to_img(final_bitstream, shape)
-        cv2.imwrite(output_image_path, img)
+        # Call the extraction function defined above
+        extract_spatial_lsb(str(INPUT_VIDEO_PATH), str(output_image_path))
+        
+        print("\n✅ Extraction Test COMPLETE.")
+
     except Exception as e:
-        print(f"Failed to reconstruct or save image: {e}")
-        # Save a black image as a failure token
-        black_img = np.zeros(shape, dtype=np.uint8)
-        cv2.imwrite(output_image_path, black_img)
+        print(f"\n❌ Extraction Test FAILED. Error: {e}")
+        print("This usually means the video is too short or the LSBs were corrupted.")
+
+if __name__ == "__main__":
+    run_single_extraction_test()

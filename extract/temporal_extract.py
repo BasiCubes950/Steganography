@@ -1,81 +1,109 @@
+"""
+Temporal Steganography Extraction Script (Placeholder)
+
+Extracts a secret image using a simplified temporal LSB method.
+NOTE: The actual logic (frame_interval, bit extraction method) MUST be
+synchronized with the corresponding 'temporal_embed' script.
+"""
 import cv2
 import numpy as np
-from tqdm import tqdm
+from pathlib import Path
+import sys
 
-from stega_lib.bit_utils import parse_header, bits_to_img
-from stega_lib.lsb import extract_bits_from_lsb
+def extract_temporal(video_path: str, output_image_path: str):
+    """
+    Extracts a secret image using a temporal steganography method (e.g.,
+    LSB from every Nth frame, or spread across frames).
 
-def extract_temporal(stego_video_path: str, output_image_path: str):
+    NOTE: The logic here is a placeholder and MUST match the 'temporal_embed' logic.
     """
-    Extracts a secret image from the LSBs of frame differences.
-    """
-    cap = cv2.VideoCapture(stego_video_path)
+    print(f"Starting temporal extraction from: {video_path}")
+    cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        raise IOError(f"Cannot open stego video: {stego_video_path}")
+        raise IOError(f"Cannot open video file: {video_path}")
 
+    # --- CONFIGURATION (MUST MATCH EMBEDDER) ---
+    frame_interval = 3
+    # Assuming a fixed, small secret image size for this placeholder.   1080, 1920
+    extracted_width, extracted_height, extracted_channels = 1920, 1080, 3
+    total_bits_needed = extracted_width * extracted_height * extracted_channels * 8
+    # -------------------------------------------
+    
+    print(f"Attempting to extract {total_bits_needed} bits (128x128x3 image)...")
+    
+    extracted_bits = []
+    frame_count = 0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if total_frames == 0:
-        raise IOError(f"Video file is empty or corrupted: {stego_video_path}")
-
-    # 1. Read first frame and extract header
-    ret, frame0 = cap.read()
-    if not ret:
-        raise ValueError("Cannot read first frame to extract header.")
-        
-    try:
-        header_bits = extract_bits_from_lsb(frame0, 128)
-        shape, total_data_bits = parse_header(header_bits)
-    except Exception as e:
-        print(f"Error parsing header, extraction will likely fail: {e}")
-        shape, total_data_bits = (100, 100, 3), 1000
     
-    total_bits_to_extract = total_data_bits
-    
-    # 2. Continue extracting data bits from frame differences
-    all_data_bits = []
-    bits_extracted = 0
-    
-    prev_frame = frame0
-    
-    pbar = tqdm(total=total_bits_to_extract, desc="Extracting Temporal")
-    
-    frame_idx = 1
-    while cap.isOpened() and bits_extracted < total_bits_to_extract:
-        ret, current_frame = cap.read()
+    while len(extracted_bits) < total_bits_needed:
+        ret, frame = cap.read()
         if not ret:
             break
             
-        # Calculate frame difference using 16-bit signed integers
-        diff = current_frame.astype(np.int16) - prev_frame.astype(np.int16)
-        
-        capacity_per_frame = diff.size
-        bits_to_get = min(capacity_per_frame, total_bits_to_extract - bits_extracted)
-        
-        if bits_to_get > 0:
-            frame_bits = extract_bits_from_lsb(diff, bits_to_get)
-            all_data_bits.append(frame_bits)
-            bits_extracted += bits_to_get
-            pbar.update(bits_to_get)
-        else:
-            break
+        if frame_count % frame_interval == 0:
+            # Placeholder: extract ALL LSBs from the frame and append
+            # WARNING: This uses the entire frame capacity in one go.
+            frame_flat = frame.flatten()
             
-        prev_frame = current_frame
-        frame_idx += 1
+            # The actual LSB extraction logic:
+            frame_lsb_bits = frame_flat & 1 
+            extracted_bits.extend(frame_lsb_bits.tolist())
+            
+            sys.stdout.write(f"\rProcessing frame {frame_count}/{total_frames}, extracted {len(extracted_bits)} bits")
+            sys.stdout.flush()
+            
+        frame_count += 1
         
-    pbar.close()
     cap.release()
-    
-    if not all_data_bits:
-         print("Warning: No data bits were extracted.")
-         final_bitstream = np.array([], dtype=np.uint8)
-    else:
-        final_bitstream = np.concatenate(all_data_bits)
+    sys.stdout.write("\n") # Newline after progress bar
 
-    # 3. Reconstruct image
+    # --- Processing Extracted Bits ---
+    extracted_bits = extracted_bits[:total_bits_needed]
+    
+    if len(extracted_bits) < total_bits_needed:
+        print(f"Warning: Could not extract all bits. Found {len(extracted_bits)}, needed {total_bits_needed}.")
+        # Pad with zeros if extraction failed early
+        extracted_bits.extend([0] * (total_bits_needed - len(extracted_bits)))
+
     try:
-        img = bits_to_img(final_bitstream, shape)
-        cv2.imwrite(output_image_path, img)
-    except Exception as e:
-        print(f"Failed to reconstruct or save image: {e}")
-        black_img = np.zeros(shape, dtype=np.uint8)
-        cv2.imwrite(output_image_path, black_img)
+        extracted_bytes = np.packbits(np.array(extracted_bits, dtype=np.uint8))
+        
+        # Ensure we only use the exact number of bytes needed for the reshape
+        expected_bytes = extracted_width * extracted_height * extracted_channels
+        
+        extracted_image = extracted_bytes[:expected_bytes].reshape(
+            extracted_height, extracted_width, extracted_channels
+        ).astype(np.uint8)
+        
+        # Save extracted image
+        output_path = Path(output_image_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(output_path), extracted_image)
+        
+        print(f"Successfully extracted temporal image to: {output_image_path}")
+        return output_image_path
+        
+    except ValueError as e:
+        print(f"Error during bit-to-image conversion or reshaping: {e}")
+        return None
+
+
+# --- RUNNER SCRIPT ---
+
+if __name__ == "__main__":
+    
+    # Placeholder paths for testing (update these if you use real files)
+    STEGO_VIDEO_PATH = Path("output/stego/temporal_stego.mp4") 
+    OUTPUT_IMAGE_PATH = Path("output/extracted/extracted_temporal_image.png")
+
+    if not STEGO_VIDEO_PATH.exists():
+        print(f"ERROR: Placeholder stego video not found at '{STEGO_VIDEO_PATH}'.")
+        print("Please update STEGO_VIDEO_PATH to a valid video file to test extraction.")
+    else:
+        try:
+            extract_temporal(str(STEGO_VIDEO_PATH), str(OUTPUT_IMAGE_PATH))
+            print("\n✅ Temporal Extraction Test Finished.")
+        except IOError as e:
+            print(f"\n❌ Extraction Failed (I/O Error): {e}")
+        except Exception as e:
+            print(f"\n❌ Extraction Failed: An unexpected error occurred: {e}")

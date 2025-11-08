@@ -198,14 +198,17 @@ def main():
     parser.add_argument(
         "--video",
         type=str,
-        required=True,
-        help="Path to the input base video (e.g., input/base_video.mp4)",
+        required=False,
+        default="data/data2.mp4",
+        help="Path to the input base video (e.g., data/data1.mp4)",
     )
+
     parser.add_argument(
         "--secret",
         type=str,
-        required=True,
-        help="Path to the input secret image (e.g., input/secret_image.png)",
+        required=False,
+        default="data/secret.png",
+        help="Path to the input secret image (e.g., data/secret.png)",
     )
     parser.add_argument(
         "--bitrates",
